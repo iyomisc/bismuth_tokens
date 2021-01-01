@@ -18,9 +18,9 @@ def action_init(params):
 
 def action_fullblock(full_block):
     for tx in full_block['transactions']:
-        if "token:" in tx[10]:
-            tokens.new_tx((tx[10], tx[11], int(tx[0]), float(tx[1]), tx[2], tx[3], tx[5])) #operation, openfield, block_height, timestamp, address, recipient, signature
+        if tx[10].startswith("token:"):
+            tokens.new_bismuth_tx((tx[10], tx[11], int(tx[0]), float(tx[1]), tx[2], tx[3], tx[5])) #operation, openfield, block_height, timestamp, address, recipient, signature
 
 
 def action_rollback(info):
-    tokens.remove_txs_since(int(info["height"]))
+    tokens.remove_token_txs_since(int(info["height"]))

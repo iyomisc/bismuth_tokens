@@ -1,5 +1,5 @@
 import sqlite3
-import os.path
+import os
 
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__)) + "/"
 
@@ -9,6 +9,10 @@ PROTOCOL_CHANGE_HEIGHT = 637385
 class Tokens:
     def __init__(self):
         self.ledger = None
+
+        if not os.path.isdir(WORKING_DIR + "data/"):
+            os.mkdir(WORKING_DIR + "data/")
+
         self.db = sqlite3.connect(WORKING_DIR + "data/tokens.db", check_same_thread=False)
         
         cursor = self.db.cursor()
@@ -17,7 +21,7 @@ class Tokens:
         
         self.db.commit()
     
-    def insert_tx(self, token, block_height, timestamp, address, recipient, amount, signature, update_balance=True):
+    def insert_token_tx(self, token, block_height, timestamp, address, recipient, amount, signature, update_balance=True):
         cursor = self.db.cursor()
         cursor.execute("INSERT INTO transactions(token, block_height, timestamp, address, recipient, amount, signature) VALUES(?, ?, ?, ?, ?, ?, ?)", (token, block_height, timestamp, address, recipient, amount, signature))
         self.db.commit()
@@ -28,7 +32,7 @@ class Tokens:
             cursor.execute("REPLACE INTO balances(token, address, balance) VALUES(?, ?, COALESCE((SELECT balance FROM balances WHERE address=? AND token=?), 0) + ?)", (token, recipient, recipient, token, amount))
             self.db.commit()
             
-    def remove_tx(self, signature, update_balance=True):
+    def remove_token_tx(self, signature, update_balance=True):
         if update_balance:
             cursor = self.db.cursor()
             cursor.execute("SELECT token, address, recipient, amount FROM transactions WHERE signature=?", (signature, ))
@@ -46,14 +50,14 @@ class Tokens:
         cursor.execute("DELETE FROM transactions WHERE signature=?", (signature, ))
         self.db.commit()
     
-    def remove_txs_since(self, height):
+    def remove_token_txs_since(self, height):
         cursor = self.db.cursor()
         cursor.execute("SELECT signature FROM transactions WHERE block_height >= ?", (height, ))
         for signature in cursor.fetchall():
-            self.remove_tx(signature[0])
+            self.remove_token_tx(signature[0])
     
-    def new_tx(self, transaction):
-        if transaction[2] <= PROTOCOL_CHANGE_HEIGHT and "token:" in transaction[1]:
+    def new_bismuth_tx(self, transaction):
+        if transaction[2] <= PROTOCOL_CHANGE_HEIGHT and transaction[1].startswith("token:"):
             transaction = list(transaction)
             if transaction[1].count(":") >= 3:
                 transaction[0] = ":".join(transaction[1].split(":")[:2])
@@ -84,14 +88,14 @@ class Tokens:
             if result[0][0]:
                 # The token already exists
                 return
-            self.insert_tx(token, transaction[2], transaction[3], "", transaction[4], amount, transaction[6])
+            self.insert_token_tx(token, transaction[2], transaction[3], "", transaction[4], amount, transaction[6])
             
         elif transaction[0] == "token:transfer":
             
             if not self.can_send(transaction[4], token, amount):
                 # Balance too low or not created token
                 return
-            self.insert_tx(token, transaction[2], transaction[3], transaction[4], transaction[5], amount, transaction[6])
+            self.insert_token_tx(token, transaction[2], transaction[3], transaction[4], transaction[5], amount, transaction[6])
     
     def load_from_ledger(self, ledger_path=""):
         if self.ledger is None:
@@ -104,7 +108,7 @@ class Tokens:
         transactions = cursor.fetchall()
         
         for transaction in transactions:
-            self.new_tx(transaction)
+            self.new_bismuth_tx(transaction)
 
     def get_balance(self, address, token):
         cursor = self.db.cursor()
@@ -128,7 +132,7 @@ class Tokens:
     def get_last_transactions(self):
         cursor = self.db.cursor()
         cursor.execute("SELECT token, block_height, timestamp, address, recipient, amount FROM transactions ORDER BY block_height DESC, timestamp DESC LIMIT 100")
-        return  cursor.fetchall()
+        return cursor.fetchall()
         
     def get_address_transactions(self, address):
         cursor = self.db.cursor()
