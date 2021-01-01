@@ -1,20 +1,15 @@
-
-
 import sqlite3
-import json
 import os.path
 
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__)) + "/"
 
 PROTOCOL_CHANGE_HEIGHT = 637385
 
+
 class Tokens:
     def __init__(self):
-        with open(WORKING_DIR + "config.json") as f:
-            self.config = json.load(f)
-        
-        self.ledger = sqlite3.connect(self.config["ledger_path"], check_same_thread=False)
-        self.db = sqlite3.connect(self.config["db_path"], check_same_thread=False)
+        self.ledger = None
+        self.db = sqlite3.connect(WORKING_DIR + "data/tokens.db", check_same_thread=False)
         
         cursor = self.db.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS transactions(token TEXT, block_height INTEGER, timestamp NUMERIC, address TEXT, recipient TEXT, amount INTEGER, signature TEXT PRIMARY KEY)") # address will be "" if the tx is a creation tx
@@ -74,9 +69,11 @@ class Tokens:
         if not token or not amount:
             # Invalid tx
             return
+
         if not amount.isdigit():
             # amount is negative or is not int
             return
+
         token = token.lower()
         amount = int(amount)
         
@@ -96,15 +93,19 @@ class Tokens:
                 return
             self.insert_tx(token, transaction[2], transaction[3], transaction[4], transaction[5], amount, transaction[6])
     
-    def load_from_ledger(self):
+    def load_from_ledger(self, ledger_path=""):
+        if self.ledger is None:
+            if not ledger_path:
+                raise ValueError("No ledger path given")
+            self.ledger = sqlite3.connect(ledger_path, check_same_thread=False)
+
         cursor = self.ledger.cursor()
         cursor.execute("SELECT operation, openfield, block_height, timestamp, address, recipient, signature FROM transactions WHERE block_height > ? AND (operation like 'token:%' OR (block_height <= ? AND openfield like 'token:%')) ORDER BY block_height ASC, timestamp ASC", (self.get_last_transaction_height(), PROTOCOL_CHANGE_HEIGHT))
         transactions = cursor.fetchall()
         
         for transaction in transactions:
             self.new_tx(transaction)
-                
-    
+
     def get_balance(self, address, token):
         cursor = self.db.cursor()
         cursor.execute("SELECT balance FROM balances WHERE address=? AND token=?", (address, token))
@@ -123,8 +124,7 @@ class Tokens:
         if len(result) and len(result[0]):
             return result[0][0]
         return -1
-        
-        
+
     def get_last_transactions(self):
         cursor = self.db.cursor()
         cursor.execute("SELECT token, block_height, timestamp, address, recipient, amount FROM transactions ORDER BY block_height DESC, timestamp DESC LIMIT 100")
@@ -159,5 +159,7 @@ class Tokens:
         cursor = self.db.cursor()
         cursor.execute("SELECT token, recipient, amount, timestamp FROM transactions WHERE address='' ORDER BY block_height DESC, timestamp DESC")
         return cursor.fetchall()
+
+
 tokens = Tokens()
 
